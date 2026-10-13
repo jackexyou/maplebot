@@ -238,6 +238,13 @@ safety:
   critical_hp_frames: 3     # 要連續幾幀都讀到低血才停機。血條被特效蓋住或
                             # 擷取抖一下都會讀成 0，一幀就停機等於整晚白掛
   pause_when_players: true  # 小地圖出現其他玩家時暫停動作
+  # 不停手但也不搶：其他玩家在小地圖上靠到 avoid_players_px 以內（小地圖 px）持續
+  # avoid_players_seconds 秒，就往路線另一端走 avoid_players_hold 秒，把這一群怪讓給對方；
+  # 走到路線盡頭就停下來原地打。人多的頻道要掛得下去，就把 pause_when_players 關掉、
+  # 這裡設 25~40。0 = 關掉。
+  avoid_players_px: 0
+  avoid_players_seconds: 2.0
+  avoid_players_hold: 12.0
   lost_player_timeout: 5.0  # 連續幾秒找不到玩家黃點就自動暫停
   sound_alerts: true        # 危險事件嗶聲提醒（Panic/黑屏/有人出現）
   black_screen_pause: true  # 畫面全黑（斷線/換頻道/讀圖）自動暫停

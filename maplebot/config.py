@@ -159,6 +159,13 @@ class SafetyCfg:
     # 就繼續打，撐不回來才承認救不了。
     critical_hp_seconds: float = 4.0
     pause_when_players: bool = True
+    # 不暫停但也不搶：其他玩家在小地圖上靠到這麼近（px）持續 avoid_players_seconds 秒，
+    # 就往路線另一端走 avoid_players_hold 秒，讓出這一群怪。0 = 關掉。
+    # 跟 pause_when_players 的差別：那個是整張圖有人就停手，這個是「附近有人就換位置」，
+    # 人多的頻道才掛得下去。走到路線盡頭就不再讓，原地打。
+    avoid_players_px: int = 0
+    avoid_players_seconds: float = 2.0
+    avoid_players_hold: float = 12.0
     lost_player_timeout: float = 5.0
     sound_alerts: bool = True         # 危險事件用 winsound 嗶聲提醒
     black_screen_pause: bool = True   # 黑屏（斷線/讀圖）自動暫停
@@ -312,6 +319,11 @@ class AttackCfg:
     cooldown: float = 0.2
     min_mp: float = 0.0               # MP 低於此比例就不放技能（0=不檢查）
     min_mobs: int = 1                 # 範圍內至少幾隻才放（大絕別浪費在單隻怪）
+    # 打哪一邊：nearest 面向最近的怪；pack 面向怪比較多的那一邊（Slash Blast 這種
+    # 打一排的技能，面向三隻比面向一隻划算；一樣多就退回最近的）
+    target: str = "nearest"
+    # 跳打：never 不跳；above 目標站得比角色高（小平台上的怪）才先跳再放；always 每次都跳
+    jump: str = "never"
 
 
 @dataclass
@@ -391,6 +403,12 @@ def _parse_attack(raw: dict, cfg: AttackCfg) -> AttackCfg:
     cfg.cooldown = float(raw.get("cooldown", cfg.cooldown))
     cfg.min_mp = float(raw.get("min_mp", cfg.min_mp))
     cfg.min_mobs = int(raw.get("min_mobs", cfg.min_mobs))
+    cfg.target = str(raw.get("target", cfg.target)).lower()
+    if cfg.target not in ("nearest", "pack"):
+        raise ConfigError(f"attack.target 只能是 nearest 或 pack，拿到: {cfg.target!r}")
+    cfg.jump = str(raw.get("jump", cfg.jump)).lower()
+    if cfg.jump not in ("never", "above", "always"):
+        raise ConfigError(f"attack.jump 只能是 never、above 或 always，拿到: {cfg.jump!r}")
     return cfg
 
 
@@ -579,6 +597,9 @@ def load_config(path: str, local_path: Optional[str] = None) -> AppCfg:
     sc.critical_hp_seconds = max(float(s.get("critical_hp_seconds",
                                              sc.critical_hp_seconds)), 0.0)
     sc.pause_when_players = bool(s.get("pause_when_players", sc.pause_when_players))
+    sc.avoid_players_px = int(s.get("avoid_players_px", sc.avoid_players_px))
+    sc.avoid_players_seconds = float(s.get("avoid_players_seconds", sc.avoid_players_seconds))
+    sc.avoid_players_hold = float(s.get("avoid_players_hold", sc.avoid_players_hold))
     sc.lost_player_timeout = float(s.get("lost_player_timeout", sc.lost_player_timeout))
     sc.sound_alerts = bool(s.get("sound_alerts", sc.sound_alerts))
     sc.black_screen_pause = bool(s.get("black_screen_pause", sc.black_screen_pause))

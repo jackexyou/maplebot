@@ -195,3 +195,18 @@ def test_wait_sends_nothing(ex):
     executor, backend = ex
     executor.execute(fsm.Wait("test"), NOW)
     assert backend.history == []
+
+
+def test_jump_attack_taps_jump_before_the_skill(ex):
+    executor, backend = ex
+    executor.execute(fsm.Attack(1, "space", cast_seconds=0.1, repeat=2, jump_key="alt"), NOW)
+    taps = _taps(backend)
+    assert taps[:2] == [SCANCODES["right"][0], SCANCODES["alt"][0]]
+    assert taps[2:] == [SCANCODES["space"][0]] * 2
+    assert executor.stats.attacks == 1
+
+
+def test_attack_without_jump_key_is_unchanged(ex):
+    executor, backend = ex
+    executor.execute(fsm.Attack(-1, "space", cast_seconds=0.1, repeat=1), NOW)
+    assert _taps(backend) == [SCANCODES["left"][0], SCANCODES["space"][0]]

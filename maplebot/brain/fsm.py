@@ -38,6 +38,10 @@ from .state import GameState
 # 追擊方向的承諾期（秒）：期間內偵測閃爍/目標換邊都不改方向，見 decide() 追擊段
 CHASE_COMMIT_SECONDS = 0.45
 
+# attack.jump: above 的判準：目標中心比角色中心高這麼多（以 790px 寬為基準）才算
+# 「站在上面」。同一層的怪因為體型高矮也會有十幾 px 的差，門檻要大過那個。
+JUMP_ABOVE_PX = 20
+
 
 @dataclass
 class Wait:
@@ -77,6 +81,8 @@ class Attack:
     # 正在打的那個框 (x, y, w, h)，playfield 座標。executor 用不到；runner 在
     # 一直打不死時拿它去問督導層「這到底是不是怪」，見 stalled_attack_target
     target: Optional[Tuple[int, int, int, int]] = None
+    # 非空 = 跳打：executor 先敲這個鍵再放技能（attack.jump，見 _jump_for）
+    jump_key: str = ""
 
 
 @dataclass
@@ -196,6 +202,10 @@ class Runtime:
     hp_potion_streak: int = 0           # 上次 HP 回升之後又喝了幾瓶
     hp_potion_since: Optional[float] = None
     hp_potions_dry: bool = False        # 喝了好幾瓶 HP 都沒回升：多半是藥水用完了
+    crowd_since: float = 0.0            # 其他玩家貼近是從什麼時候開始的（0 = 沒人貼近）
+    avoid_until: float = 0.0            # 讓位中：往 avoid_dir 走到這個時間
+    avoid_dir: int = 0
+    avoid_cooldown_until: float = 0.0   # 剛讓過位（或無處可讓）：這段時間不再觸發
 
     def note_buff(self, index: int, now: float) -> None:
         self.last_buff[index] = now
@@ -511,6 +521,77 @@ AWAY_GRACE_SECONDS = 1.0
 ENGAGE_COOLDOWN_SECONDS = 3.0
 
 
+def _pick_target(in_range, center_x: int, mode: str):
+    """要面向哪一隻。nearest = 最近的；pack = 怪比較多的那一邊裡最近的。
+
+    Slash Blast 這類打一排的技能，面向三隻比面向一隻划算。兩邊一樣多就退回
+    最近的，單隻怪也一樣——pack 只在真的有「哪一邊比較多」可選時才改變行為。
+    """
+    nearest = min(in_range, key=lambda m: abs(m.cx - center_x))
+    if mode != "pack" or len(in_range) < 2:
+        return nearest
+    right = [m for m in in_range if m.cx >= center_x]
+    left = [m for m in in_range if m.cx < center_x]
+    if len(right) == len(left):
+        return nearest
+    side = right if len(right) > len(left) else left
+    return min(side, key=lambda m: abs(m.cx - center_x))
+
+
+def _jump_for(sk, mob, center_y: int, scale: float, jump_key: str) -> str:
+    """attack.jump 決定要不要先跳再放技能；回傳要按的跳躍鍵，不跳就是空字串。"""
+    if not jump_key or sk.jump == "never":
+        return ""
+    if sk.jump == "always":
+        return jump_key
+    return jump_key if mob.cy < center_y - JUMP_ABOVE_PX * scale else ""
+
+
+def _avoid_players(state: GameState, cfg: AppCfg, pat: PatrolCfg, rt: Runtime,
+                   now: float):
+    """其他玩家貼近就往路線另一端走，不跟人搶同一群怪（safety.avoid_players_px）。
+
+    pause_when_players 是「圖上有人就停手」，人多的頻道等於整晚不動；這個是
+    「附近有人就換位置」：貼近持續 avoid_players_seconds 秒才動（路過的人不算），
+    之後往遠離對方的方向走 avoid_players_hold 秒，走到路線盡頭就停下來原地打
+    （再讓就出路線了）。讓過一次之後有一段冷卻，免得兩個人在一條路線上
+    互相推來推去。回 None = 不用讓，照常決策。
+    """
+    px = cfg.safety.avoid_players_px
+    if px <= 0 or state.minimap_xy is None:
+        return None
+    x, y = state.minimap_xy
+    lo, hi = _route_x_bounds(waypoints_for_bounds(pat, rt), state.minimap_size, pat.tolerance)
+    if now < rt.avoid_until and rt.avoid_dir:
+        if _chase_out_of_bounds(x, rt.avoid_dir, lo, hi):
+            rt.avoid_until = 0.0
+            rt.avoid_cooldown_until = now + cfg.safety.avoid_players_hold
+            return None
+        return Chase(rt.avoid_dir, pat.max_step_seconds, away=True)
+    close = [o for o in state.other_players
+             if abs(o[0] - x) <= px and abs(o[1] - y) <= px]
+    if not close:
+        rt.crowd_since = 0.0
+        return None
+    if rt.crowd_since == 0.0:
+        rt.crowd_since = now
+    if now - rt.crowd_since < cfg.safety.avoid_players_seconds \
+            or now < rt.avoid_cooldown_until:
+        return None
+    nearest = min(close, key=lambda o: abs(o[0] - x))
+    direction = -1 if nearest[0] >= x else 1
+    if _chase_out_of_bounds(x, direction, lo, hi):
+        direction = -direction          # 這一側已是盡頭：穿過對方往另一端
+        if _chase_out_of_bounds(x, direction, lo, hi):
+            rt.avoid_cooldown_until = now + cfg.safety.avoid_players_hold
+            rt.crowd_since = 0.0
+            return None                 # 路線兩端都到了（短路線）：無處可讓，原地打
+    rt.avoid_dir = direction
+    rt.avoid_until = now + cfg.safety.avoid_players_hold
+    rt.crowd_since = 0.0
+    return Chase(direction, pat.max_step_seconds, away=True)
+
+
 def _end_backing(rt: Runtime, now: float) -> None:
     """怪不在後退距離內：過了寬限期才把「已經退了多久」歸零（見 AWAY_GRACE_SECONDS）。"""
     if rt.away_since and now - rt.away_seen > AWAY_GRACE_SECONDS:
@@ -668,6 +749,11 @@ def decide(state: GameState, cfg: AppCfg, profile: Profile, rt: Runtime,
     if cfg.safety.pause_when_players and state.other_players:
         return Wait(f"小地圖出現 {len(state.other_players)} 位其他玩家，暫停動作", seconds=1.0)
 
+    if not rt.climbing:
+        avoid = _avoid_players(state, cfg, pat, rt, now)
+        if avoid is not None:
+            return avoid
+
     # 掛在繩子上時方向鍵和技能鍵都會讓角色掉下來，所以垂直移動途中不 buff 不打怪
     if not rt.climbing:
         for i, buff in enumerate(profile.buffs):
@@ -724,6 +810,7 @@ def decide(state: GameState, cfg: AppCfg, profile: Profile, rt: Runtime,
                 rt.begin_attack_break(now, cfg.safety.attack_break_seconds)
                 break             # 跳出攻擊，往下走巡邏
             nearest = min(in_range, key=lambda m: abs(m.cx - center_x))
+            target_mob = _pick_target(in_range, center_x, sk.target)
             # 遠程職業被貼臉時先退開再打（近戰把 keep_away_px 設 0 關掉）。
             # 退一步下個 tick 就打得到了，等於邊退邊射。退不了就照打：
             # 退的方向出了巡邏路線（跟追擊一樣要避開端點外的傳送門），或已經
@@ -743,11 +830,12 @@ def decide(state: GameState, cfg: AppCfg, profile: Profile, rt: Runtime,
                     return Chase(away, pat.max_step_seconds, away=True)
             else:
                 _end_backing(rt, now)
-            direction = 1 if nearest.cx >= center_x else -1
-            target = (int(nearest.cx - nearest.w / 2), int(nearest.cy - nearest.h / 2),
-                      int(nearest.w), int(nearest.h))
+            direction = 1 if target_mob.cx >= center_x else -1
+            target = (int(target_mob.cx - target_mob.w / 2), int(target_mob.cy - target_mob.h / 2),
+                      int(target_mob.w), int(target_mob.h))
             return Attack(direction, sk.key, sk.cast_seconds, sk.repeat,
-                          aoe=(sk.type == "aoe"), index=i, target=target)
+                          aoe=(sk.type == "aoe"), index=i, target=target,
+                          jump_key=_jump_for(sk, target_mob, center_y, s, pat.jump_key))
 
         if not backing_checked:
             _end_backing(rt, now)  # 這個 tick 沒輪到「太近要不要退」

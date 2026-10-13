@@ -1449,3 +1449,106 @@ def test_one_missed_frame_does_not_restart_the_back_off_limit():
     fsm.decide(empty, cfg, p, rt, NOW + 0.5, (400, 300))    # 一幀沒看到
     later = fsm.decide(close, cfg, p, rt, NOW + fsm.KEEP_AWAY_MAX_SECONDS + 0.1, (400, 300))
     assert isinstance(later, fsm.Attack), later
+
+
+# ---- attack.target: pack ------------------------------------------------------
+
+def test_pack_targeting_faces_the_side_with_more_mobs(cfg, profile):
+    """最近的一隻在左邊，但右邊有兩隻：Slash Blast 面向右邊划算。"""
+    profile.attack.target = "pack"
+    st = _state(mobs=[_mob(380), _mob(450), _mob(480)])
+    action = fsm.decide(st, cfg, profile, _rt(), NOW, CENTER)
+    assert isinstance(action, fsm.Attack) and action.direction == 1
+
+
+def test_pack_targeting_falls_back_to_nearest_on_a_tie(cfg, profile):
+    profile.attack.target = "pack"
+    st = _state(mobs=[_mob(380), _mob(480)])
+    action = fsm.decide(st, cfg, profile, _rt(), NOW, CENTER)
+    assert isinstance(action, fsm.Attack) and action.direction == -1
+
+
+def test_nearest_targeting_is_the_default(cfg, profile):
+    st = _state(mobs=[_mob(380), _mob(450), _mob(480)])
+    action = fsm.decide(st, cfg, profile, _rt(), NOW, CENTER)
+    assert isinstance(action, fsm.Attack) and action.direction == -1
+
+
+# ---- attack.jump -------------------------------------------------------------
+
+def test_jump_attack_when_the_target_stands_above(cfg, profile):
+    profile.attack.jump = "above"
+    profile.patrol.jump_key = "alt"
+    above = _mob(420, cy=CENTER[1] - 60)          # 60 > JUMP_ABOVE_PX，仍在垂直範圍 90 內
+    action = fsm.decide(_state(mobs=[above]), cfg, profile, _rt(), NOW, CENTER)
+    assert isinstance(action, fsm.Attack) and action.jump_key == "alt"
+
+
+def test_no_jump_for_a_mob_on_the_same_floor(cfg, profile):
+    profile.attack.jump = "above"
+    profile.patrol.jump_key = "alt"
+    action = fsm.decide(_state(mobs=[_mob(420, cy=CENTER[1] - 8)]), cfg, profile, _rt(), NOW, CENTER)
+    assert isinstance(action, fsm.Attack) and action.jump_key == ""
+
+
+def test_jump_always_and_never(cfg, profile):
+    profile.patrol.jump_key = "alt"
+    profile.attack.jump = "always"
+    a = fsm.decide(_state(mobs=[_mob(420)]), cfg, profile, _rt(), NOW, CENTER)
+    assert isinstance(a, fsm.Attack) and a.jump_key == "alt"
+    profile.attack.jump = "never"
+    b = fsm.decide(_state(mobs=[_mob(420, cy=CENTER[1] - 60)]), cfg, profile, _rt(), NOW, CENTER)
+    assert isinstance(b, fsm.Attack) and b.jump_key == ""
+
+
+# ---- safety.avoid_players ----------------------------------------------------
+
+def _crowded(cfg, px=20):
+    cfg.safety.pause_when_players = False
+    cfg.safety.avoid_players_px = px
+    cfg.safety.avoid_players_seconds = 2.0
+    cfg.safety.avoid_players_hold = 12.0
+    cfg.safety.attack_stall_seconds = 0   # 測試裡角色不會動，別讓「打太久沒進展」插手
+
+
+def test_avoid_players_is_off_by_default(cfg, profile):
+    cfg.safety.pause_when_players = False
+    st = _state(other_players=[(62, 30)], mobs=[_mob(420)])
+    action = fsm.decide(st, cfg, profile, _rt(), NOW, CENTER)
+    assert isinstance(action, fsm.Attack)
+
+
+def test_avoid_players_walks_away_after_a_few_seconds(cfg, profile):
+    """旁邊站了人（右邊 2px）持續 2 秒：往左走，而且接下來幾秒都繼續走。"""
+    _crowded(cfg)
+    rt = _rt()
+    st = _state(other_players=[(62, 30)], mobs=[_mob(420)])
+    first = fsm.decide(st, cfg, profile, rt, NOW, CENTER)
+    assert isinstance(first, fsm.Attack)                         # 剛來，先不理
+    later = fsm.decide(st, cfg, profile, rt, NOW + 2.5, CENTER)
+    assert isinstance(later, fsm.Chase) and later.away and later.direction == -1
+    again = fsm.decide(_state(mobs=[_mob(420)]), cfg, profile, rt, NOW + 5.0, CENTER)
+    assert isinstance(again, fsm.Chase) and again.direction == -1   # 對方走了也先走完這段
+    done = fsm.decide(_state(mobs=[_mob(420)]), cfg, profile, rt, NOW + 2.5 + 12.5, CENTER)
+    assert isinstance(done, fsm.Attack)
+
+
+def test_a_passer_by_does_not_trigger_avoidance(cfg, profile):
+    _crowded(cfg)
+    rt = _rt()
+    st = _state(other_players=[(62, 30)], mobs=[_mob(420)])
+    fsm.decide(st, cfg, profile, rt, NOW, CENTER)
+    gone = fsm.decide(_state(mobs=[_mob(420)]), cfg, profile, rt, NOW + 1.0, CENTER)
+    assert isinstance(gone, fsm.Attack)
+    back = fsm.decide(st, cfg, profile, rt, NOW + 1.5, CENTER)   # 重新計時
+    assert isinstance(back, fsm.Attack)
+
+
+def test_avoidance_stops_at_the_end_of_the_route(cfg, profile):
+    """已經站在路線左端，人在右邊：往左走會出路線，改穿過對方往右端。"""
+    _crowded(cfg)
+    rt = _rt()
+    st = _state(minimap_xy=(5, 30), other_players=[(9, 30)], mobs=[_mob(420)])
+    fsm.decide(st, cfg, profile, rt, NOW, CENTER)
+    action = fsm.decide(st, cfg, profile, rt, NOW + 2.5, CENTER)
+    assert isinstance(action, fsm.Chase) and action.direction == 1

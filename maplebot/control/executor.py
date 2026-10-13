@@ -121,6 +121,11 @@ class Executor:
                               "右" if action.direction > 0 else "左",
                               action.key, action.repeat)
                 self.kb.tap(arrow, self._dur(0.05))
+            if action.jump_key:
+                # 跳打：起跳後技能才放得到上面那層的怪。0.15s 是起跳到離地的時間
+                self.log.info("跳打：先按 %s", action.jump_key)
+                self.kb.tap(action.jump_key, self._dur(0.08))
+                time.sleep(self._dur(0.15))
             for _ in range(max(action.repeat, 1)):
                 self.kb.tap(action.key, self._dur(action.cast_seconds))
                 time.sleep(self._dur(0.1))
