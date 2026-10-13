@@ -148,7 +148,9 @@ class Runner:
                 ui_dir, TL_NAME, BR_NAME, ui_dir)
             return False
         frame = self.capture.grab()
-        region = find_minimap(frame, tl, br, border=self.cfg.vision.minimap_border)
+        region = find_minimap(frame, tl, br, border=self.cfg.vision.minimap_border,
+                              search_px=self.cfg.vision.minimap_search_px,
+                              min_size=self.cfg.vision.minimap_min_size)
         if region is None:
             self.log.error("找不到小地圖角落（分數過低）。確認小地圖有展開、"
                            "模板是目前解析度截的")

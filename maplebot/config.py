@@ -79,6 +79,12 @@ class VisionCfg:
     screen_max_coast: int = 3
     ui_templates_dir: str = field(default_factory=lambda: UI_TEMPLATES_DIR)
     minimap_border: int = 6           # auto 定位小地圖時向內縮的邊框厚度
+    # auto 定位時右下角只在左上角往右下這麼多 px 的窗裡找（0 = 全畫面）。
+    # 右下角模板就是一截白框轉角，別的面板也有；左上角有標題列才獨一無二。
+    minimap_search_px: int = 0
+    # auto 定位配對出來的小地圖最小尺寸 [寬, 高]；小地圖收合時兩個角會各自
+    # 比到別的面板、配出一塊幾十 px 的假小地圖，用這個擋掉
+    minimap_min_size: Tuple[int, int] = (20, 15)
     bar_colors: Dict[str, str] = field(default_factory=lambda: {"hp": "red", "mp": "blue", "exp": "yellow"})
     # 血條讀值去雜訊：被撞到時血條會閃，那一幀會讀成 0%
     bar_max_drop: float = 0.35        # 一幀掉超過這個比例就先不信，下一幀再確認
@@ -532,6 +538,11 @@ def load_config(path: str, local_path: Optional[str] = None) -> AppCfg:
     vc.screen_max_coast = int(v.get("screen_max_coast", vc.screen_max_coast))
     vc.ui_templates_dir = str(v.get("ui_templates_dir", vc.ui_templates_dir))
     vc.minimap_border = int(v.get("minimap_border", vc.minimap_border))
+    vc.minimap_search_px = int(v.get("minimap_search_px", vc.minimap_search_px))
+    ms = v.get("minimap_min_size", vc.minimap_min_size)
+    if not isinstance(ms, (list, tuple)) or len(ms) != 2:
+        raise ConfigError(f"vision.minimap_min_size 要是 [寬, 高]，拿到: {ms!r}")
+    vc.minimap_min_size = (int(ms[0]), int(ms[1]))
     vc.bar_colors.update(v.get("bars", {}))
     vc.bar_max_drop = float(v.get("bar_max_drop", vc.bar_max_drop))
     vc.bar_confirm_frames = max(int(v.get("bar_confirm_frames",

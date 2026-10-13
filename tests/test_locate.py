@@ -42,3 +42,23 @@ def test_degenerate_region_rejected():
     frame[10:22, 10:22] = tl[:, :, None]
     frame[14:26, 18:30] = br[:, :, None]
     assert find_minimap(frame, tl, br, border=4) is None
+
+
+def test_search_window_ignores_a_decoy_corner_far_away(scene):
+    """右下角的模板在畫面別處有個更像的複本（實機：快捷鍵面板的白框轉角）。
+    限制只在左上角往右下的窗裡找，就不會把整個畫面當成小地圖。"""
+    frame, tl, br = scene
+    frame[300:312, 500:512] = br[:, :, None]          # 誘餌：跟真的一模一樣
+    assert find_minimap(frame, tl, br, border=4) in ((54, 44, 192, 102), (54, 44, 454, 264))
+    assert find_minimap(frame, tl, br, border=4, search_px=250) == (54, 44, 192, 102)
+
+
+def test_search_window_too_small_returns_none(scene):
+    frame, tl, br = scene
+    assert find_minimap(frame, tl, br, border=4, search_px=8) is None
+
+
+def test_min_size_rejects_a_collapsed_minimap(scene):
+    frame, tl, br = scene
+    assert find_minimap(frame, tl, br, border=4, min_size=(300, 50)) is None
+    assert find_minimap(frame, tl, br, border=4, min_size=(150, 80)) == (54, 44, 192, 102)

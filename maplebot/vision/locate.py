@@ -38,21 +38,40 @@ def _best_match(img: np.ndarray, tpl: np.ndarray) -> Tuple[float, Tuple[int, int
 
 
 def find_minimap(frame_bgr: np.ndarray, tl_tpl: np.ndarray, br_tpl: np.ndarray,
-                 border: int = 6) -> Optional[Region]:
-    """用左上/右下角落模板找出小地圖內部區域；找不到（分數過低）回 None。"""
+                 border: int = 6, search_px: int = 0,
+                 min_size: Tuple[int, int] = (20, 15)) -> Optional[Region]:
+    """用左上/右下角落模板找出小地圖內部區域；找不到（分數過低）回 None。
+
+    search_px > 0 時右下角只在左上角往右下 search_px px 的窗裡找。右下角的模板
+    就是一截白色外框的轉角，畫面上長得一樣的地方不少：實測 2560x1440 的
+    Classic 客戶端，右下角的快捷鍵面板以 0.89 贏過真正的小地圖角（0.86），
+    定位出來的「小地圖」是整個畫面。左上角有標題列、沒有這個問題，所以拿它
+    當錨點限制右下角的搜尋範圍。0 = 全畫面找（舊行為）。
+
+    min_size 是配對出來的區域最小尺寸 (寬, 高)：小地圖收合時畫面上只剩標題列，
+    兩個模板各自在別的面板上比到一個角，配出一塊 100x40 的「小地圖」。
+    """
     if frame_bgr.shape[0] < max(tl_tpl.shape[0], br_tpl.shape[0]) or \
             frame_bgr.shape[1] < max(tl_tpl.shape[1], br_tpl.shape[1]):
         return None
-
     tl_score, tl = _best_match(frame_bgr, tl_tpl)
-    br_score, br = _best_match(frame_bgr, br_tpl)
-    if tl_score < MATCH_THRESHOLD or br_score < MATCH_THRESHOLD:
+    if tl_score < MATCH_THRESHOLD:
         return None
-
+    if search_px > 0:
+        win = frame_bgr[tl[1]:tl[1] + search_px, tl[0]:tl[0] + search_px]
+        if win.shape[0] < br_tpl.shape[0] or win.shape[1] < br_tpl.shape[1]:
+            return None
+        br_score, br = _best_match(win, br_tpl)
+        br = (tl[0] + br[0], tl[1] + br[1])
+    else:
+        br_score, br = _best_match(frame_bgr, br_tpl)
+    if br_score < MATCH_THRESHOLD:
+        return None
     x1 = tl[0] + border
     y1 = tl[1] + border
     x2 = br[0] + br_tpl.shape[1] - border
     y2 = br[1] + br_tpl.shape[0] - border
-    if x2 - x1 < 20 or y2 - y1 < 15:   # 兩個角配對出來的區域太小 = 誤匹配
+    min_w, min_h = min_size
+    if x2 - x1 < max(min_w, 20) or y2 - y1 < max(min_h, 15):   # 太小 = 誤匹配
         return None
     return (x1, y1, x2 - x1, y2 - y1)

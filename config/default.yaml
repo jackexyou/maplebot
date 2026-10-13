@@ -109,6 +109,13 @@ vision:
   screen_max_coast: 3
   ui_templates_dir: data/templates/ui # 小地圖角落/玩家點模板位置
   minimap_border: 6                   # auto 定位時向內縮的邊框厚度
+  # auto 定位時右下角只在左上角往右下這麼多 px 的窗裡找（0 = 全畫面）。右下角模板
+  # 只是一截白框轉角，快捷鍵面板那種白框也比得中；左上角有標題列才獨一無二，
+  # 拿它當錨點。大視窗（2560 寬）實測設 700 就不會再把整個畫面當成小地圖
+  minimap_search_px: 0
+  # auto 定位配對出來的小地圖最小 [寬, 高]。小地圖收合時只剩標題列，兩個角各自比到
+  # 別的面板會配出一塊幾十 px 的假小地圖；設到真小地圖一定會超過的大小就擋得掉
+  minimap_min_size: [20, 15]
   bars:                               # 各 bar 的顏色（見 vision/status.py 的 COLOR_PRESETS）
     hp: red
     mp: blue
