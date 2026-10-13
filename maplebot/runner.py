@@ -24,7 +24,7 @@ from .telemetry.alerts import Alerts
 from .telemetry.metrics import LoopMetrics, Series
 from .telemetry.progress import ExpTracker
 from .telemetry.sysmon import SystemMonitor
-from .vision.locate import BR_NAME, TL_NAME, find_minimap, load_ui_template
+from .vision.locate import BR_NAME, TL_NAME, find_minimap, load_ui_templates
 from .vision.types import MobDetector
 
 IDLE_WARN_SECONDS = 20.0   # 連續閒置這麼久就把 Wait 的理由升級成警告
@@ -138,8 +138,8 @@ class Runner:
         if not self.cfg.minimap_auto:
             return True
         ui_dir = self.cfg.vision.ui_templates_dir
-        tl = load_ui_template(ui_dir, TL_NAME)
-        br = load_ui_template(ui_dir, BR_NAME)
+        tl = load_ui_templates(ui_dir, TL_NAME)
+        br = load_ui_templates(ui_dir, BR_NAME)
         if tl is None or br is None:
             self.log.error(
                 "regions.minimap 設為 auto，但缺少角落模板 %s/%s、%s。"
@@ -150,7 +150,9 @@ class Runner:
         frame = self.capture.grab()
         region = find_minimap(frame, tl, br, border=self.cfg.vision.minimap_border,
                               search_px=self.cfg.vision.minimap_search_px,
-                              min_size=self.cfg.vision.minimap_min_size)
+                              min_size=self.cfg.vision.minimap_min_size,
+                              max_size=self.cfg.vision.minimap_max_size,
+                              anchor_box=self.cfg.vision.minimap_anchor_box)
         if region is None:
             self.log.error("找不到小地圖角落（分數過低）。確認小地圖有展開、"
                            "模板是目前解析度截的")

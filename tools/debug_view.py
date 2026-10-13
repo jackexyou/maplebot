@@ -100,12 +100,14 @@ def main() -> int:
               "任何蓋住遊戲的視窗都會被拍進去")
 
     if cfg.minimap_auto:
-        from maplebot.vision.locate import BR_NAME, TL_NAME, find_minimap, load_ui_template
-        tl = load_ui_template(cfg.vision.ui_templates_dir, TL_NAME)
-        br = load_ui_template(cfg.vision.ui_templates_dir, BR_NAME)
+        from maplebot.vision.locate import BR_NAME, TL_NAME, find_minimap, load_ui_templates
+        tl = load_ui_templates(cfg.vision.ui_templates_dir, TL_NAME)
+        br = load_ui_templates(cfg.vision.ui_templates_dir, BR_NAME)
         region = find_minimap(cap.grab(), tl, br, cfg.vision.minimap_border,
                               search_px=cfg.vision.minimap_search_px,
-                              min_size=cfg.vision.minimap_min_size) \
+                              min_size=cfg.vision.minimap_min_size,
+                              max_size=cfg.vision.minimap_max_size,
+                              anchor_box=cfg.vision.minimap_anchor_box) \
             if tl is not None and br is not None else None
         if region:
             cfg.regions["minimap"] = region

@@ -85,6 +85,11 @@ class VisionCfg:
     # auto 定位配對出來的小地圖最小尺寸 [寬, 高]；小地圖收合時兩個角會各自
     # 比到別的面板、配出一塊幾十 px 的假小地圖，用這個擋掉
     minimap_min_size: Tuple[int, int] = (20, 15)
+    # 配對出來的小地圖最大尺寸 [寬, 高]（空 = 不限）。跟 min_size 一樣是擋假小地圖的
+    minimap_max_size: Optional[Tuple[int, int]] = None
+    # auto 定位時只在這塊 [x, y, w, h] 裡找左上角（空 = 全畫面）。小地圖面板永遠在
+    # 畫面左上；淺色地圖上左上角模板的分數會掉到 0.7，全畫面找會被別的白框轉角贏過
+    minimap_anchor_box: Optional[Tuple[int, int, int, int]] = None
     bar_colors: Dict[str, str] = field(default_factory=lambda: {"hp": "red", "mp": "blue", "exp": "yellow"})
     # 血條讀值去雜訊：被撞到時血條會閃，那一幀會讀成 0%
     bar_max_drop: float = 0.35        # 一幀掉超過這個比例就先不信，下一幀再確認
@@ -543,6 +548,20 @@ def load_config(path: str, local_path: Optional[str] = None) -> AppCfg:
     if not isinstance(ms, (list, tuple)) or len(ms) != 2:
         raise ConfigError(f"vision.minimap_min_size 要是 [寬, 高]，拿到: {ms!r}")
     vc.minimap_min_size = (int(ms[0]), int(ms[1]))
+    mx = v.get("minimap_max_size", vc.minimap_max_size)
+    if mx:
+        if not isinstance(mx, (list, tuple)) or len(mx) != 2:
+            raise ConfigError(f"vision.minimap_max_size 要是 [寬, 高]，拿到: {mx!r}")
+        vc.minimap_max_size = (int(mx[0]), int(mx[1]))
+    else:
+        vc.minimap_max_size = None
+    ab = v.get("minimap_anchor_box", vc.minimap_anchor_box)
+    if ab:
+        if not isinstance(ab, (list, tuple)) or len(ab) != 4:
+            raise ConfigError(f"vision.minimap_anchor_box 要是 [x, y, w, h]，拿到: {ab!r}")
+        vc.minimap_anchor_box = tuple(int(n) for n in ab)
+    else:
+        vc.minimap_anchor_box = None
     vc.bar_colors.update(v.get("bars", {}))
     vc.bar_max_drop = float(v.get("bar_max_drop", vc.bar_max_drop))
     vc.bar_confirm_frames = max(int(v.get("bar_confirm_frames",

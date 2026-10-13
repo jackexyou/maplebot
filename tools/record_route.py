@@ -37,12 +37,14 @@ def _locate_minimap(cfg, cap) -> None:
     """跟 debug_view/runner 相同的小地圖自動定位（minimap_auto 開著才做）。"""
     if not cfg.minimap_auto:
         return
-    from maplebot.vision.locate import BR_NAME, TL_NAME, find_minimap, load_ui_template
-    tl = load_ui_template(cfg.vision.ui_templates_dir, TL_NAME)
-    br = load_ui_template(cfg.vision.ui_templates_dir, BR_NAME)
+    from maplebot.vision.locate import BR_NAME, TL_NAME, find_minimap, load_ui_templates
+    tl = load_ui_templates(cfg.vision.ui_templates_dir, TL_NAME)
+    br = load_ui_templates(cfg.vision.ui_templates_dir, BR_NAME)
     region = find_minimap(cap.grab(), tl, br, cfg.vision.minimap_border,
                           search_px=cfg.vision.minimap_search_px,
-                          min_size=cfg.vision.minimap_min_size) \
+                          min_size=cfg.vision.minimap_min_size,
+                          max_size=cfg.vision.minimap_max_size,
+                          anchor_box=cfg.vision.minimap_anchor_box) \
         if tl is not None and br is not None else None
     if region:
         cfg.regions["minimap"] = region
